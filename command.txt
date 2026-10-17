@@ -23,7 +23,8 @@ Open Terminal and go to the project folder first:
 
   A progress bar shows which prompt is running, with a log underneath.
   Click Stop to end a run early. Answers are saved to results/.
-  Each site reuses the same chat for 5 prompts, then starts a new chat.
+  "Prompts per chat" sets how many prompts go into one conversation
+  before a new chat starts (default 5, up to 50).
 
 
 2. ADDING PROMPTS

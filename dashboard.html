@@ -15,6 +15,7 @@
     --text-secondary: #52514e;
     --text-muted: #85837d;
     --series-1: #2a78d6;
+    --series-2: #eb6834;
     --series-muted: #c9c7c0;
     --good: #0ca30c;
     --good-text: #006300;
@@ -32,6 +33,7 @@
       --text-secondary: #c3c2b7;
       --text-muted: #8f8d86;
       --series-1: #3987e5;
+      --series-2: #d95926;
       --series-muted: #4a4945;
       --good-text: #5ccf5c;
     }
@@ -46,6 +48,7 @@
     --text-secondary: #c3c2b7;
     --text-muted: #8f8d86;
     --series-1: #3987e5;
+    --series-2: #d95926;
     --series-muted: #4a4945;
     --good-text: #5ccf5c;
   }
@@ -71,10 +74,10 @@
   .dot.good { background: var(--good); }
   .dot.warning { background: var(--warning); }
   .dot.critical { background: var(--critical); }
-  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin-bottom: 16px; }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin-bottom: 16px; }
   .card { background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px; padding: 16px; min-width: 0; }
   .tile .label { color: var(--text-secondary); font-size: 12px; }
-  .tile .value { font-size: 26px; font-weight: 650; margin: 2px 0; }
+  .tile .value { font-size: 24px; font-weight: 650; margin: 2px 0; }
   .tile .sub { color: var(--text-muted); font-size: 12px; }
   .bar { height: 6px; background: var(--grid); border-radius: 3px; margin: 8px 0 4px; overflow: hidden; }
   .bar > div { height: 100%; background: var(--series-1); border-radius: 3px; }
@@ -106,6 +109,9 @@
   td:first-child, td:nth-child(2) { white-space: nowrap; }
   td.ad { color: var(--text-secondary); max-width: 360px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .table-wrap { overflow-x: auto; }
+  .table-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+  .table-head h2 { margin-bottom: 8px; }
+  tfoot td { font-weight: 600; border-bottom: 0; border-top: 1px solid var(--border); }
   .yes { color: var(--good-text); }
   .no { color: var(--text-muted); }
   .error { color: var(--critical); margin-bottom: 12px; }
@@ -192,6 +198,11 @@
         <label for="run-gap">Delay between prompts (seconds)</label>
         <input id="run-gap" type="number" min="5" value="30" required>
       </div>
+      <div class="field">
+        <label for="run-per-chat">Prompts per chat</label>
+        <input id="run-per-chat" type="number" min="1" max="50" value="5" required>
+        <span class="hint">How many prompts to send in one conversation before starting a new chat.</span>
+      </div>
       <div class="form-error" id="form-error"></div>
       <div class="actions">
         <button class="btn" type="button" id="cancel-run">Cancel</button>
@@ -224,6 +235,16 @@
       <div class="sub" id="t-avg-sub"></div>
     </div>
     <div class="card tile">
+      <div class="label">Avg time ChatWait counted</div>
+      <div class="value" id="t-dwell">–</div>
+      <div class="sub" id="t-dwell-sub"></div>
+    </div>
+    <div class="card tile">
+      <div class="label">Avg response time</div>
+      <div class="value" id="t-resp">–</div>
+      <div class="sub" id="t-resp-sub"></div>
+    </div>
+    <div class="card tile">
       <div class="label">Last 24 hours (est.)</div>
       <div class="value" id="t-rate">–</div>
       <div class="sub" id="t-rate-sub"></div>
@@ -253,16 +274,26 @@
   </section>
 
   <section class="card" style="margin-bottom:12px">
+    <h2>Response time per prompt</h2>
+    <div class="legend" id="resp-legend"></div>
+    <div class="chart" id="c-responses"></div>
+  </section>
+
+  <section class="card" style="margin-bottom:12px">
     <h2>Total earned over time</h2>
     <div class="chart" id="c-earnings"></div>
   </section>
 
   <section class="card">
-    <h2>Recent impressions</h2>
+    <div class="table-head">
+      <h2>Recent impressions</h2>
+      <span class="hint" id="recent-avg"></span>
+    </div>
     <div class="table-wrap">
       <table>
         <thead><tr><th>Time</th><th>Site</th><th>On screen</th><th>Billable</th><th>Ad</th></tr></thead>
         <tbody id="rows"></tbody>
+        <tfoot id="rows-foot"></tfoot>
       </table>
     </div>
   </section>
@@ -444,6 +475,63 @@ function drawEarnings(history, span) {
   svg.setAttribute('aria-label', 'Total earned over time');
 }
 
+const MODEL_COLORS = { chatgpt: 'var(--series-1)', gemini: 'var(--series-2)' };
+const MODEL_NAMES = { chatgpt: 'ChatGPT', gemini: 'Gemini' };
+const secs = (ms) => (ms / 1000).toFixed(1) + 's';
+const avgMs = (rows) => rows.reduce((t, r) => t + r.ms, 0) / rows.length;
+
+// One dot per prompt in the order they ran, a thin line per model, and a
+// dashed line at each model's average.
+function drawResponses(rows, dwellMs) {
+  const box = $('c-responses');
+  const models = Object.keys(MODEL_COLORS).filter((m) => rows.some((r) => r.site === m));
+  $('resp-legend').innerHTML = models
+    .map((m) => `<span style="--c: ${MODEL_COLORS[m]}">${MODEL_NAMES[m]} · avg ${secs(avgMs(rows.filter((r) => r.site === m)))}</span>`)
+    .concat(dwellMs ? [`<span style="--c: var(--text-muted)">ChatWait counted · avg ${secs(dwellMs)}</span>`] : [])
+    .join('');
+  const { svg, width, height } = frame(box, 220);
+  if (!rows.length) {
+    svg.remove();
+    box.insertAdjacentHTML('afterbegin', '<div class="empty">No timed prompts in this range yet. Response times are recorded from your next run.</div>');
+    return;
+  }
+  const L = 44, R = 12, T = 10, B = 24;
+  const max = niceMax(Math.max(...rows.map((r) => r.ms / 1000), (dwellMs || 0) / 1000));
+  yAxis(svg, L, width - R, height - B, T, max, (v) => Math.round(v) + 's');
+  const n = rows.length;
+  const X = (i) => (n === 1 ? (L + width - R) / 2 : L + 8 + ((width - L - R - 16) * i) / (n - 1));
+  const Y = (ms) => height - B - ((height - B - T) * (ms / 1000)) / max;
+  const indexed = rows.map((r, i) => ({ ...r, i }));
+  for (const m of models) {
+    const pts = indexed.filter((r) => r.site === m);
+    const a = avgMs(pts);
+    el('line', { x1: L, x2: width - R, y1: Y(a), y2: Y(a), stroke: MODEL_COLORS[m], 'stroke-dasharray': '4 4', 'stroke-width': 1, opacity: 0.7 }, svg);
+    if (pts.length > 1) {
+      el('path', { d: pts.map((p, k) => `${k ? 'L' : 'M'}${X(p.i)},${Y(p.ms)}`).join(''), fill: 'none', stroke: MODEL_COLORS[m], 'stroke-width': 2, 'stroke-linejoin': 'round', opacity: 0.85 }, svg);
+    }
+  }
+  if (dwellMs) {
+    el('line', { x1: L, x2: width - R, y1: Y(dwellMs), y2: Y(dwellMs), stroke: 'var(--text-muted)', 'stroke-width': 1.5 }, svg);
+    el('text', { x: width - R, y: Y(dwellMs) - 5, 'text-anchor': 'end', class: 'axis' }, svg).textContent = `ChatWait counted ${secs(dwellMs)}`;
+  }
+  const tip = tooltip(box);
+  for (const r of indexed) {
+    const cx = X(r.i), cy = Y(r.ms);
+    el('circle', { cx, cy, r: 4.5, fill: MODEL_COLORS[r.site], stroke: 'var(--surface-1)', 'stroke-width': 2 }, svg);
+    const hit = el('circle', { cx, cy, r: 12, fill: 'transparent' }, svg);
+    const text = r.text.length > 60 ? r.text.slice(0, 57) + '…' : r.text;
+    hit.addEventListener('mousemove', () => {
+      const rect = svg.getBoundingClientRect();
+      tip.show(`<div class="muted">${MODEL_NAMES[r.site]} · ${fmtTime(Date.parse(r.at), true)}</div><b>${secs(r.ms)}</b> · ${text.replace(/</g, '&lt;')}`,
+        (cx / width) * rect.width, (cy / height) * rect.height);
+    });
+    hit.addEventListener('mouseleave', tip.hide);
+  }
+  el('text', { x: L, y: height - 6, class: 'axis' }, svg).textContent = 'Oldest';
+  el('text', { x: width - R, y: height - 6, 'text-anchor': 'end', class: 'axis' }, svg).textContent = 'Newest';
+  svg.setAttribute('aria-label', 'Response time per prompt');
+}
+
 function render() {
   if (!data) return;
   const now = Date.now();
@@ -489,12 +577,41 @@ function render() {
     ? `${day} billable · $10 in ~${Math.ceil(remaining / dayEarn)} days at this pace`
     : `${day} billable`;
 
+  const responses = (data.responses || []).filter((r) => span === Infinity || Date.parse(r.at) >= now - span);
+  const allResponses = data.responses || [];
+  $('t-resp').textContent = allResponses.length ? secs(avgMs(allResponses)) : '–';
+  $('t-resp-sub').textContent = allResponses.length
+    ? Object.keys(MODEL_NAMES)
+        .map((m) => allResponses.filter((r) => r.site === m))
+        .map((rs, k) => (rs.length ? `${Object.values(MODEL_NAMES)[k]} ${secs(avgMs(rs))}` : ''))
+        .filter(Boolean)
+        .join(' · ') + ` (${allResponses.length} prompts)`
+    : 'recorded from your next run';
+  const dwellRows = inRange.filter((r) => r.site !== 'welcome' && r.dwell_ms > 0);
+  const dwellAvg = dwellRows.length ? dwellRows.reduce((t, r) => t + r.dwell_ms, 0) / dwellRows.length : 0;
+  $('t-dwell').textContent = dwellAvg ? secs(dwellAvg) : '–';
+  const siteDwell = Object.entries({ 'chatgpt.com': 'ChatGPT', 'gemini.google.com': 'Gemini' })
+    .map(([host, name]) => [name, dwellRows.filter((r) => r.site === host)])
+    .filter(([, rs]) => rs.length)
+    .map(([name, rs]) => `${name} ${secs(rs.reduce((t, r) => t + r.dwell_ms, 0) / rs.length)}`);
+  $('t-dwell-sub').textContent = dwellAvg
+    ? `${siteDwell.join(' · ')} · per impression, ${dwellRows.length} in range`
+    : 'no impressions in this range';
+  drawResponses(responses, dwellAvg);
   drawImpressions(inRange, span);
   drawSites(inRange);
   drawEarnings(data.history, span);
 
   const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
-  $('rows').innerHTML = all.slice(0, 50).map((r) => `<tr>
+  const recent = all.slice(0, 50);
+  const recentAvg = recent.length ? recent.reduce((t, r) => t + r.dwell_ms, 0) / recent.length : 0;
+  $('recent-avg').textContent = recent.length
+    ? `Average on screen: ${secs(recentAvg)} across these ${recent.length} · shortest ${secs(Math.min(...recent.map((r) => r.dwell_ms)))} · longest ${secs(Math.max(...recent.map((r) => r.dwell_ms)))}`
+    : '';
+  $('rows-foot').innerHTML = recent.length
+    ? `<tr><td>Average</td><td></td><td>${secs(recentAvg)}</td><td>${recent.filter((r) => r.billable).length} of ${recent.length} billable</td><td></td></tr>`
+    : '';
+  $('rows').innerHTML = recent.map((r) => `<tr>
     <td>${fmtTime(r.t, true)}</td>
     <td>${esc(r.site.replace(/^www\./, ''))}</td>
     <td>${(r.dwell_ms / 1000).toFixed(1)}s</td>
@@ -598,6 +715,7 @@ $('open-run').addEventListener('click', async () => {
     const saved = JSON.parse(localStorage.getItem('cw-run') || '{}');
     if (saved.count) $('run-count').value = saved.count;
     if (saved.gap) $('run-gap').value = saved.gap;
+    if (saved.perChat) $('run-per-chat').value = saved.perChat;
   } catch {}
   $('form-error').textContent = '';
   updateCountHint();
@@ -612,10 +730,11 @@ $('run-form').addEventListener('submit', async (e) => {
     sites: chosenSites(),
     count: Number($('run-count').value),
     gap: Number($('run-gap').value),
+    perChat: Number($('run-per-chat').value),
     newPrompts: $('run-new').value,
   };
   if (!body.sites.length) return ($('form-error').textContent = 'Choose at least one model.');
-  try { localStorage.setItem('cw-run', JSON.stringify({ count: body.count, gap: body.gap })); } catch {}
+  try { localStorage.setItem('cw-run', JSON.stringify({ count: body.count, gap: body.gap, perChat: body.perChat })); } catch {}
   const res = await fetch('/api/run', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
   const out = await res.json();
   if (!res.ok) return ($('form-error').textContent = out.error);

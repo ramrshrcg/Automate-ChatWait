@@ -9,7 +9,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { SITES } from './sites.js';
 import { openInOwnWindow } from './windows.js';
-import { ADDED_FILE, PROMPTS_DIR, pendingPrompts } from './prompts.js';
+import { ADDED_FILE, PROMPTS_DIR, loadProgress, pendingPrompts } from './prompts.js';
 
 const args = process.argv.slice(2);
 const flag = (name, fallback) => {
@@ -158,7 +158,7 @@ function addPrompts(text, sites) {
   fs.appendFileSync(ADDED_FILE, sep + tagged.join('\n') + '\n');
 }
 
-function startRun({ sites, count, gap, newPrompts }) {
+function startRun({ sites, count, gap, perChat, newPrompts }) {
   if (run.child) throw new Error('A run is already in progress.');
   sites = (sites || []).filter((s) => SITES[s]);
   if (!sites.length) throw new Error('Choose at least one model.');
@@ -167,9 +167,10 @@ function startRun({ sites, count, gap, newPrompts }) {
   if (!available) throw new Error('No new prompts left for the chosen model(s). Add a .txt file to data/prompts/ or type some above. Prompts already run are skipped.');
   count = Math.min(available, Math.max(1, parseInt(count, 10) || 1));
   gap = Math.max(5, parseInt(gap, 10) || 30);
+  perChat = Math.min(50, Math.max(1, parseInt(perChat, 10) || 5));
 
   Object.assign(run, { total: count, done: 0, failed: 0, current: null, log: [], startedAt: Date.now(), endedAt: null });
-  const child = spawn(process.execPath, ['queue.js', '--sites', sites.join(','), '--count', String(count), '--gap', String(gap)], {
+  const child = spawn(process.execPath, ['queue.js', '--sites', sites.join(','), '--count', String(count), '--gap', String(gap), '--per-chat', String(perChat)], {
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   run.child = child;
@@ -239,6 +240,11 @@ function apiData() {
     earnings: summarizeEarnings(state.earnings),
     referrals: state.referrals,
     impressions,
+    // Per-prompt response times recorded by queue.js (older entries have none).
+    responses: Object.values(loadProgress())
+      .filter((r) => r.ms > 0)
+      .map((r) => ({ site: r.site, text: r.text, at: r.at, ms: r.ms }))
+      .sort((a, b) => a.at.localeCompare(b.at)),
     history: state.history,
     lastUpdated: state.lastUpdated,
     pollSeconds: POLL_SECONDS,

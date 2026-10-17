@@ -69,7 +69,8 @@ async function waitForResponse(page, site, previousCount) {
       last = text;
       stableSince = Date.now();
     }
-    if (!generating && text && Date.now() - stableSince > 2000) return text;
+    // stableSince is when the text last changed, i.e. when the answer actually finished.
+    if (!generating && text && Date.now() - stableSince > 2000) return { text, finishedAt: stableSince };
     await page.waitForTimeout(500);
   }
   throw new Error('Timed out waiting for the response to finish.');
@@ -134,17 +135,19 @@ async function runQueue() {
 
     const previousCount = await page.locator(site.response).count();
     const sendButton = page.locator(site.send).first();
+    const sentAt = Date.now();
     if (await sendButton.isVisible().catch(() => false)) await sendButton.click();
     else await page.keyboard.press('Enter');
     chatUses[prompt.site]++;
 
     console.log('  Waiting for the answer…');
     try {
-      const response = await waitForResponse(page, site, previousCount);
+      const { text: response, finishedAt } = await waitForResponse(page, site, previousCount);
+      const ms = finishedAt - sentAt;
       const file = saveResult(prompt, site, response);
-      progress[prompt.id] = { site: prompt.site, text: prompt.text, file, at: new Date().toISOString() };
+      progress[prompt.id] = { site: prompt.site, text: prompt.text, file, at: new Date().toISOString(), ms };
       saveProgress(progress);
-      console.log(`  Saved → ${file}\n`);
+      console.log(`  Saved → ${file} (answered in ${(ms / 1000).toFixed(1)}s)\n`);
     } catch (err) {
       console.log(`  ${err.message} The prompt stays in the queue.\n`);
     }
