@@ -1,0 +1,79 @@
+CHATWAIT WORKFLOW — COMMANDS
+============================
+
+Open Terminal and go to the project folder first:
+
+    cd ~/Desktop/automate-ChatWait
+
+
+1. EVERYDAY USE (one command)
+-----------------------------
+
+    npm run go
+
+  Does everything in order:
+    - opens the workflow Chrome window (if it isn't open)
+    - starts the dashboard and opens http://localhost:4000 in your browser
+
+  Then, in the dashboard:
+    1. Click "Run prompts" (top right)
+    2. In the pop-up, tick the models (ChatGPT, Gemini), set the number of
+       prompts and the delay between them (seconds, minimum 5)
+    3. Click Start
+
+  A progress bar shows which prompt is running, with a log underneath.
+  Click Stop to end a run early. Answers are saved to results/.
+  Each site reuses the same chat for 5 prompts, then starts a new chat.
+
+
+2. ADDING PROMPTS
+-----------------
+
+  Prompts are read from:
+    - prompts.txt
+    - every .txt file in data/prompts/   (e.g. data/prompts/my-prompts.txt)
+    - the "Add prompts" box in the pop-up (saved to data/prompts/added.txt)
+
+  One task per line, starting with the site (no prefix = chatgpt):
+
+    chatgpt: Explain SQL joins with practical examples.
+    gemini: Create five IELTS vocabulary exercises.
+
+  Lines starting with # are ignored.
+  Prompts already done are remembered in .progress.json and skipped.
+  To run everything again from the top, delete that file:
+
+    rm .progress.json
+
+
+3. INDIVIDUAL COMMANDS
+----------------------
+
+    npm run chrome        Open only the workflow Chrome window
+    npm run dashboard     Run only the earnings dashboard (http://localhost:4000)
+    npm start             Run the prompt queue from Terminal instead
+                          (e.g. npm start -- --count 5 --gap 30 --sites chatgpt,gemini)
+    npm run stop          Stop the dashboard running in the background
+
+
+4. WHEN SOMETHING BREAKS
+------------------------
+
+    npm run check         Shows whether the script can still find each site's
+                          text box and buttons. If one says "not found", the site
+                          changed its layout; update sites.js.
+
+    npm run copy-profile  Copy your normal Chrome profile again (logins, extensions).
+                          Quit Chrome completely (Cmd+Q) before running it.
+
+  "Could not reach Chrome"  → run: npm run chrome
+  Dashboard says "Stale"    → the workflow Chrome window was closed; run: npm run chrome
+
+
+5. WHERE THINGS ARE
+-------------------
+
+    prompts.txt      your prompts
+    results/         every saved answer (Markdown)
+    data/            dashboard history and impression log
+    sites.js         page selectors for ChatGPT and Gemini

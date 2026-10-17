@@ -1,0 +1,6 @@
+# One task per line. Optional site prefix: chatgpt:, gemini:
+# Lines without a prefix use the --site default (chatgpt).
+# Lines starting with # are ignored.
+chatgpt: Explain SQL joins with practical examples.
+gemini: Explain the difference between ETL and ELT.
+gemini: Create five IELTS vocabulary exercises.
